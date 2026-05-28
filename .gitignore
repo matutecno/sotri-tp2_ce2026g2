@@ -1,0 +1,16 @@
+# STM32CubeIDE build output
+Debug/
+Release/
+
+# Compiled object files
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+
+# IDE metadata
+.metadata/
+.settings/
