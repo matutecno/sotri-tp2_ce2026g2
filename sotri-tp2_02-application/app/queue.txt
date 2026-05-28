@@ -1,0 +1,139 @@
+app.h
+...
+
+/********************** external data declaration ****************************/
+...
+
+/* Declare a variable of type QueueHandle_t. This is used to reference queues*/
+extern QueueHandle_t h_btn_led_q;
+
+...
+
+
+app.c
+...
+
+/********************** external data declaration ****************************/
+...
+
+/* Declare a variable of type QueueHandle_t. This is used to reference queues*/
+QueueHandle_t h_btn_led_q;
+
+...
+
+/********************** external functions definition ************************/
+...
+
+    /* Before a queue or semaphore (binary or counting) or mutex is used it must 
+     * be explicitly created.
+	 *
+	 * Check the queue or semaphore (binary or counting) or mutex was created
+     * successfully.
+     *
+     * Add queue or semaphore (binary or counting) or mutex to registry. */
+
+    /* The queue is created to hold a maximum of 5 task_led_ev_t values. */
+	h_btn_led_q = xQueueCreate(5, sizeof(task_led_ev_t));
+	configASSERT(NULL != h_btn_led_q);
+	vQueueAddToRegistry(h_btn_led_q, "BTN to LED Queue Handle");
+
+	...
+
+
+task_btn.c
+...
+
+/********************** macros and definitions *******************************/
+...
+
+#define BTN_TICK_DEL_ZERO	(pdMS_TO_TICKS(0ul))
+#define BTN_TICK_DEL_MAX	(pdMS_TO_TICKS(50ul))
+
+...
+
+/********************** external functions definition ************************/
+	...
+
+	static task_led_ev_t value_to_send = NOT_BLINKING;
+
+        value_to_send = EV_LED_BLINK;
+		value_to_send = EV_LED_OFF;
+
+		...
+
+		/* Send an task_led_ev_t value. Specifying the block time as 
+		 * portMAX_DELAY will cause the task to block indefinitely 
+		 * (without a timeout) if the queue is already full */
+		xQueueSendToBack(h_btn_led_q, &value_to_send, portMAX_DELAY);
+
+		/* Send an task_led_ev_t value. Don't block if the queue is
+		 * already full. */ 
+		xQueueSendToBack(h_btn_led_q, &value_to_send, (portTickType) BTN_TICK_DEL_ZERO);
+		
+		/* The queue is still full. Use xQueueOverwrite() to overwrite an 
+		 * task_led_ev_t value held in the queue */
+    	xQueueOverwrite(h_btn_led_q, &value_to_send );
+
+		/* Check number of free spaces in a queue */
+		if (ZERO < uxQueueSpacesAvailable(h_btn_led_q))
+		{
+			...
+		}
+
+		...
+
+
+task_led.c
+...
+
+/********************** macros and definitions *******************************/
+...
+
+#define LED_TICK_DEL_ZERO	(pdMS_TO_TICKS(0ul))
+#define LED_TICK_DEL_MAX	(pdMS_TO_TICKS(50ul))
+
+...
+
+/********************** external functions definition ************************/
+	...
+
+	task_led_ev_t received_value;
+
+		...
+
+		/* Check number of messages stored in a queue */
+		if (ZERO != uxQueueMessagesWaiting(h_btn_led_q))
+		{
+			/* Recive an task_led_ev_t value. Don't block if the queue is
+			 * already empty. */ 
+			xQueueReceive(h_btn_led_q, &received_value, (portTickType) LED_TICK_DEL_ZERO);
+
+			task_led_dta.event = received_value;
+			task_led_dta.flag = true;
+		}
+
+		...
+
+
+app_it.c
+...
+
+/********************** external functions definition ************************/
+	...
+	
+	task_led_ev_t received_value;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	/* The xHigherPriorityTaskWoken parameter must be initialized to pdFALSE as
+	 * it will get set to pdTRUE inside the interrupt safe API function if a
+	 * context switch is required. */
+	xHigherPriorityTaskWoken = pdFALSE;
+
+	/* Unblock the task by releasing the semaphore. */
+	xQueueSendFromISR(h_btn_led_q, &received_value, &xHigherPriorityTaskWoken );
+
+    /* Yield if xHigherPriorityTaskWoken is true. 
+     * The actual macro used here is port specific. */
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+    ...
