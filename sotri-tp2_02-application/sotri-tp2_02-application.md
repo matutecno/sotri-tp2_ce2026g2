@@ -254,4 +254,13 @@ La tarea `task_led` tiene trabajo propio que realizar independientemente de si l
 
 **Comportamiento observado al depurar:**
 
-_(completar después de depurar en placa)_
+Tras cargar el firmware en la placa, el comportamiento funcional resultó idéntico al de la Actividad 01: al presionar el botón B1, el LED LD2 se enciende y comienza a parpadear a 1 Hz; al soltarlo, el LED se apaga. No se apreció ninguna diferencia visible respecto del mecanismo anterior basado en variables compartidas.
+
+Este resultado es el esperado y correcto. Lo que se modificó fue únicamente el mecanismo de transporte del evento entre `task_btn` y `task_led` (variable compartida → cola), no la lógica de la máquina de estados del LED ni la relación causa-efecto entre el botón y el LED. Por lo tanto, la conducta observable a simple vista debía permanecer igual.
+
+La diferencia real introducida por la cola no es perceptible a simple vista, sino estructural:
+
+* La comunicación pasa a ser segura ante concurrencia (*thread-safe*): `xQueueSend` y `xQueueReceive` copian el dato de forma atómica dentro del buffer interno de la cola, lo que elimina la condición de carrera latente que existía al escribir directamente sobre `task_led_dta`.
+* El productor y el consumidor quedan desacoplados, y la cola (de capacidad 5) podría almacenar varios eventos pendientes. En esta aplicación, al usar `xQueueReceive` de forma no bloqueante (timeout `0`), el parpadeo periódico de 500 ms se mantiene intacto independientemente de la llegada de eventos.
+
+Como observación complementaria sobre la configuración de reloj, durante la depuración se verificó la evolución de `SystemCoreClock`: pasa de 16 MHz (HSI por defecto, en el `Reset_Handler`) a 84 MHz una vez ejecutado `SystemClock_Config()` con el PLL activo, según la tabla de la sección B. Este cambio de frecuencia es independiente de la migración a cola, ya que afecta la velocidad de ejecución del sistema y no la lógica de comunicación entre tareas.
