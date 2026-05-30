@@ -1,0 +1,110 @@
+app.h
+...
+
+/********************** external data declaration ****************************/
+...
+
+/* Declare a variable of type SemaphoreHandle_t (binary or counting) or mutex.
+ * This is used to reference the semaphore that is used to synchronize a thread
+ * with other thread or to ensure mutual exclusive access to...*/
+extern SemaphoreHandle_t h_btn_led_bin_sem;
+
+...
+
+
+app.c
+...
+
+/********************** external data declaration ****************************/
+...
+
+/* Declare a variable of type SemaphoreHandle_t (binary or counting) or mutex.
+ * This is used to reference the semaphore that is used to synchronize a thread
+ * with other thread or to ensure mutual exclusive access to...*/
+SemaphoreHandle_t h_btn_led_bin_sem;
+
+...
+
+/********************** external functions definition ************************/
+	...
+
+    /* Before a queue or semaphore (binary or counting) or mutex is used it must 
+     * be explicitly created.
+	 *
+	 * Check the queue or semaphore (binary or counting) or mutex was created
+     * successfully.
+     *
+     * Add queue or semaphore (binary or counting) or mutex to registry. */
+
+	/* The semaphore is created in the 'empty' state, meaning the semaphore 
+	 * must first be given using the xSemaphoreGive() API function before it can
+	 * subsequently be taken (obtained) using the xSemaphoreTake() function */
+	h_btn_led_bin_sem = xSemaphoreCreateBinary();
+	configASSERT(NULL != h_btn_led_bin_sem);
+	vQueueAddToRegistry(h_btn_led_bin_sem, "BTN to LED Binary Semaphore Handle");
+
+	...
+
+
+task_btn.c
+...
+
+/********************** external functions definition ************************/
+		...
+
+		xSemaphoreTake(h_btn_led_bin_sem, (portTickType) LED_TICK_DEL_MIN))
+
+		...
+
+		/* 'Give' the semaphore to unblock the task. */
+		xSemaphoreGive(h_btn_led_bin_sem);
+
+		...
+
+
+task_led.c
+...
+
+/********************** external functions definition ************************/
+		...
+
+		/* Check Binary Semaphore */
+		if (pdTRUE == xSemaphoreTake(h_btn_led_bin_sem, (portTickType) LED_TICK_DEL_MIN))
+		{
+        	/* Check, Update Led event */
+			if (NOT_BLINKING == task_led_dta.event)
+			{
+				task_led_dta.event = BLINKING;
+			}
+			else
+			{
+				task_led_dta.event = NOT_BLINKING;
+			}
+
+			task_led_dta.flag = true;
+		}
+
+		...
+
+
+app_it.c
+...
+
+/********************** external functions definition ************************/
+	...
+	
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	/* The xHigherPriorityTaskWoken parameter must be initialized to pdFALSE as
+	 * it will get set to pdTRUE inside the interrupt safe API function if a
+	 * context switch is required. */
+	xHigherPriorityTaskWoken = pdFALSE;
+
+	/* Unblock the task by releasing the semaphore. */
+	xSemaphoreGiveFromISR(h_btn_led_bin_sem, &xHigherPriorityTaskWoken);
+
+    /* Yield if xHigherPriorityTaskWoken is true. 
+     * The actual macro used here is port specific. */
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+	...
