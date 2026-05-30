@@ -1,6 +1,6 @@
 # sotri-tp2_01-application
 
-## Análisis del código fuente — Consulta (Paso 06)
+## 1. Análisis del código fuente — Consulta (Paso 06)
 
 ### A. `startup_stm32f446retx.s`
 
@@ -177,3 +177,54 @@ Escribe directamente sobre la estructura interna de `task_led`. No utiliza ning�
 **Al presionar el botón:** `task_btn` detecta flanco descendente, espera 50 ms, confirma. Llama `put_event_task_led(EV_LED_BLINK)`. `task_led` detecta `flag=true`, enciende el LED y comienza a hacer toggle cada 500 ms.
 
 **Al soltar el botón:** `task_btn` detecta flanco ascendente, espera 50 ms, confirma. Llama `put_event_task_led(EV_LED_OFF)`. `task_led` apaga el LED y vuelve a `ST_LED_OFF`.
+
+---
+
+## 2. Indicar la evolución de las variables `SysTick` y `SystemCoreClock` desde `Reset_Handler` hasta el `while(1)` de `main.c`
+
+- **Respuesta:**  
+  Al inicio del programa, luego del reset, el microcontrolador trabaja con el reloj interno por defecto. En ese punto `SystemCoreClock` todavía representa la frecuencia inicial del sistema y `SysTick` aún no está funcionando como tick de FreeRTOS.
+
+  Durante `Reset_Handler`, se llama a `SystemInit()`, que realiza una configuración básica del sistema antes de entrar a `main()`. Luego, dentro de `main.c`, `HAL_Init()` inicializa la HAL y prepara la base de tiempo de la librería. Más adelante, `SystemClock_Config()` configura el PLL y actualiza la frecuencia principal del sistema, por lo que `SystemCoreClock` pasa a representar la frecuencia final configurada para la CPU.
+
+  Antes de iniciar FreeRTOS, `SysTick` todavía no actúa como tick del scheduler. Cuando se llama a `osKernelStart()`, FreeRTOS configura `SysTick` para generar interrupciones periódicas según `configTICK_RATE_HZ`. En este proyecto, esa frecuencia es de 1000 Hz, por lo que el tick del RTOS ocurre cada 1 ms.
+
+| Etapa | `SystemCoreClock` | `SysTick` |
+|---|---|---|
+| Inicio en `Reset_Handler` | Frecuencia inicial del sistema | Inactivo para FreeRTOS |
+| Después de `SystemInit()` | Configuración básica del sistema | Aún no controla el scheduler |
+| Después de `SystemClock_Config()` | Frecuencia final configurada por PLL | Aún no es el tick de FreeRTOS |
+| Después de `osKernelStart()` | Se mantiene en la frecuencia final | Activo como tick de FreeRTOS |
+
+---
+
+## 3. Indicar el comportamiento del programa desde `Reset_Handler` hasta antes de llegar al `while(1)` de `main.c`
+
+- **Respuesta:**  
+  La ejecución comienza en `Reset_Handler`, que prepara la memoria y el entorno de C. Primero se configura el stack, luego se inicializa el sistema, se copian las variables inicializadas desde Flash a RAM y se limpian las variables no inicializadas en `.bss`. Después se ejecutan las inicializaciones de la librería C y se llama a `main()`.
+
+  Al entrar en `main.c`, el programa inicializa la HAL, configura el reloj principal del sistema, inicializa los periféricos usados por la aplicación y arranca TIM2 en modo interrupción. Luego se inicializan los recursos propios de la aplicación, como tareas, colas, semáforos y callbacks.
+
+  Finalmente, `osKernelStart()` inicia el scheduler de FreeRTOS. Desde ese punto, el control del programa pasa al RTOS. Por eso, el `while(1)` que aparece al final de `main.c` queda como código de respaldo, pero normalmente no se ejecuta.
+
+---
+
+## 4. Indicar cómo y para qué `SysTick` y `Timer 1 / TIM2` interactúan con FreeRTOS
+
+- **Respuesta:**  
+  `SysTick` interactúa directamente con FreeRTOS porque funciona como la base de tiempo del sistema operativo. Cada interrupción de `SysTick` genera un tick del kernel. Ese tick permite que FreeRTOS controle retardos, desbloquee tareas, actualice temporizadores internos y decida si debe realizar un cambio de contexto.
+
+  TIM2 se usa como contador auxiliar de alta frecuencia para las estadísticas de ejecución de FreeRTOS. Cuando `configGENERATE_RUN_TIME_STATS` está habilitado, FreeRTOS necesita una fuente de tiempo más precisa que el tick normal para medir cuánto tiempo de CPU consume cada tarea. En este proyecto, TIM2 cumple ese rol incrementando `ulHighFrequencyTimerTicks`.
+
+  En resumen, `SysTick` mide el tiempo del scheduler, mientras que TIM2 mide tiempo de ejecución para diagnóstico y estadísticas.
+
+---
+
+## 5. Indicar cómo y para qué `TIM2` interactúa con la HAL del proyecto STM32
+
+- **Respuesta:**  
+  TIM2 interactúa con la HAL a través de su interrupción. Cuando TIM2 genera un evento de actualización, se ejecuta `TIM2_IRQHandler()` en `stm32f4xx_it.c`. Este handler no procesa directamente toda la lógica, sino que llama a `HAL_TIM_IRQHandler(&htim2)`.
+
+  La HAL identifica el evento del temporizador y ejecuta el callback correspondiente: `HAL_TIM_PeriodElapsedCallback()`. Dentro de ese callback, el código verifica si el temporizador que produjo la interrupción es TIM2. Si lo es, incrementa `ulHighFrequencyTimerTicks`.
+
+  Por lo tanto, TIM2 se usa mediante la infraestructura de la HAL para generar interrupciones periódicas y actualizar un contador de alta frecuencia usado por FreeRTOS para estadísticas de tiempo de ejecución.
